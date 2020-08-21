@@ -22,6 +22,7 @@
 
 #include "EXGLNativeMethodsUtils.h"
 #include "EXJSIUtils.h"
+#include "TypedArrayApi.h"
 
 // Constants in WebGL that aren't in OpenGL ES
 // https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Constants
@@ -39,6 +40,26 @@
 
 namespace expo {
 namespace gl_cpp {
+
+//
+// If jsi::Object created from instance of jsi::HostObject is attached to e.g. `global`, then lifecycle of
+// this instance of `InvalidateOnDestroyHostObject` will be tied to that jsi::Runtime and destructor will be called
+// just before jsi::Runtime itself is destroyed.
+//
+class InvalidateOnDestroyHostObject : public jsi::HostObject {
+ public:
+  InvalidateOnDestroyHostObject() {}
+  virtual ~InvalidateOnDestroyHostObject() {
+    invalidateJsiPropNameIDCache();
+  }
+  virtual jsi::Value get(jsi::Runtime &, const jsi::PropNameID &name) {
+    return jsi::Value::null();
+  }
+  virtual void set(jsi::Runtime &, const jsi::PropNameID &name, const jsi::Value &value) {}
+  virtual std::vector<jsi::PropNameID> getPropertyNames(jsi::Runtime &rt) {
+    return {};
+  }
+};
 
 // --- EXGLContext -------------------------------------------------------------
 
@@ -181,6 +202,10 @@ class EXGLContext {
     jsi::Value jsContextMap = runtime.global().getProperty(runtime, "__EXGLContexts");
     if (jsContextMap.isNull() || jsContextMap.isUndefined()) {
       runtime.global().setProperty(runtime, "__EXGLContexts", jsi::Object(runtime));
+      runtime.global().setProperty(
+          runtime,
+          "__EXGLOnDestroyHostObject",
+          jsi::Object::createFromHostObject(runtime, std::make_shared<InvalidateOnDestroyHostObject>()));
     }
     runtime.global()
         .getProperty(runtime, "__EXGLContexts")
